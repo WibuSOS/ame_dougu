@@ -9,6 +9,7 @@
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define ONE_WIRE_BUS 4 // Data wire is plugged into digital pin 3 on the Arduino
 #define LED_BUILTIN 2 // LED for testing is attached to pin 2
+#define A0 34 // Analog input on port 34 for soil moisture sensor
 #define SERIAL_9600 9600 // Serial port 9600
 #define SERIAL_115200 115200 // Serial port 115200
 
@@ -223,6 +224,19 @@ void ds18b20_read(DallasTemperature &sensors, float &temperature_ds18b20, String
 }
 
 //Soil moisture sensor
+int soil_sensor_value;
+int soilPercentage;
+
+void soil_sensor_read(int &soil_sensor_value, int &soilPercentage){
+  soil_sensor_value = analogRead(A0);
+//  Serial.println(soil_sensor_value);
+  soil_sensor_value = constrain(soil_sensor_value, 485, 1023);
+  soilPercentage = map(soil_sensor_value, 485, 1023, 100, 0);
+
+  Serial.print("Soil humidity: ");
+  Serial.print(soilPercentage);
+  Serial.println("%");
+}
 
 //Plant
 float avg_temperature;
@@ -234,26 +248,28 @@ byte Hour_last;
 byte Minute_last;
 byte Second_last;
 
-void plant_watering(float &avg_temperature, Adafruit_BME280 &bme, float &pressure_bme280, float &temperature_bme280, float &altitude_bme280, float &humidity_bme280,
-                    DallasTemperature &sensors, float &temperature_ds18b20,
+void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pressure_bme280, float &temperature_bme280, float &altitude_bme280, float &humidity_bme280,
+                    DallasTemperature &sensors, float &temperature_ds18b20, int &soil_sensor_value, int &soilPercentage,
                     DS3231 &Clock, byte& Year_last, byte& Month_last, byte& Date_last, byte& Hour_last, byte& Minute_last, byte& Second_last, bool &Century, bool &h12, bool &PM){
   
   bme280_read(bme280, pressure_bme280, temperature_bme280, altitude_bme280, humidity_bme280, "get");
   ds18b20_read(sensors, temperature_ds18b20, "get");
-  //soil humidity function here
+  soil_sensor_read(soil_sensor_value, soilPercentage);
   
   avg_temperature = (temperature_bme280 + temperature_ds18b20) / 2;
-  Serial.println(avg_temperature);
+  Serial.print("Average temperature: ");
+  Serial.print(avg_temperature);
+  Serial.println(" C");
   
   if(avg_temperature >= 35.0){
-    if("soil humidity" < 50){
+    if(soilPercentage < 50){
       Serial.println("Watering the plant");
       ds3231_read(Clock, Year_last, Month_last, Date_last, Hour_last, Minute_last, Second_last, Century, h12, PM, "get");
       //send to internet function here
     }
   }
   else{
-    if("soil humidity" < 30){
+    if(soilPercentage < 30){
       Serial.println("Watering the plant");
       ds3231_read(Clock, Year_last, Month_last, Date_last, Hour_last, Minute_last, Second_last, Century, h12, PM, "get");
       //send to internet function here
@@ -278,7 +294,10 @@ void setup(){
 void loop(){
   bme280_read(bme280, pressure_bme280, temperature_bme280, altitude_bme280, humidity_bme280);
   ds18b20_read(sensors, temperature_ds18b20);
-  //plant watering function here
+  soil_sensor_read(soil_sensor_value, soilPercentage);
+  plant_watering(avg_temperature, bme280, pressure_bme280, temperature_bme280, altitude_bme280, humidity_bme280,
+                sensors, temperature_ds18b20, soil_sensor_value, soilPercentage,
+                Clock, Year_last, Month_last, Date_last, Hour_last, Minute_last, Second_last, Century, h12, PM);
   
   char InChar;
   if(Serial.read()){
