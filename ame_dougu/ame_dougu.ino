@@ -4,12 +4,18 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <DS3231.h>
-//#include <Servo.h>
+#include "esp32-hal-ledc.h"
 
 #define SEALEVELPRESSURE_HPA (1013.25)
+#define COUNT_LOW 0 // Minimum degree for the servo motor
+#define COUNT_HIGH 8888 // Maximum degree for the servo motor
+#define TIMER_WIDTH 16 // Servo motor 16-bit width
+#define CHANNEL 1 // Communication channel for the servo motor
+#define Hz 50 // 50 wave cycles per second for the servo motor
+#define SERVO_PIN 25 // Servo motor is attached to pin 25
 #define ONE_WIRE_BUS 4 // Data wire is plugged into digital pin 3 on the Arduino
 #define LED_BUILTIN 2 // LED for testing is attached to pin 2
-#define A0 34 // Analog input on port 34 for soil moisture sensor
+#define AI 34 // Analog input on port 34 for soil moisture sensor
 #define SERIAL_9600 9600 // Serial port 9600
 #define SERIAL_115200 115200 // Serial port 115200
 
@@ -17,25 +23,21 @@ Adafruit_BME280 bme280;
 OneWire oneWire(ONE_WIRE_BUS); // Setup a oneWire instance to communicate with any OneWire device
 DallasTemperature sensors(&oneWire); // Pass oneWire reference to DallasTemperature library
 DS3231 Clock;
-//Servo myservo;  // create servo object to control a servo
 
 //Servo
-int servo_pin = 9;
+void valve_open(){
+  for (int i = COUNT_LOW; i < COUNT_HIGH; i += 100){
+    ledcWrite(CHANNEL, i); // sweep open servo 1
+    delay(50);
+  }
+}
 
-//void valve_open(Servo &myservo){
-//  for (int pos = 0; pos <= 180; pos += 1) { // goes from 0 degrees to 180 degrees
-//    // in steps of 1 degree
-//    myservo.write(pos);              // tell servo to go to position in variable 'pos'
-//    delay(15);                       // waits 15ms for the servo to reach the position
-//  }
-//}
-//
-//void valve_close(Servo &myservo){
-//  for (int pos = 180; pos >= 0; pos -= 1) { // goes from 180 degrees to 0 degrees
-//    myservo.write(pos);              // tell servo to go to position in variable 'pos'
-//    delay(15);                       // waits 15ms for the servo to reach the position
-//  }
-//}
+void valve_close(){
+  for (int i = COUNT_HIGH; i > COUNT_LOW; i -= 100){
+    ledcWrite(CHANNEL, i); // sweep close servo 1
+    delay(50);
+  }
+}
 
 //Memory card
 
@@ -228,7 +230,7 @@ int soil_sensor_value;
 int soilPercentage;
 
 void soil_sensor_read(int &soil_sensor_value, int &soilPercentage){
-  soil_sensor_value = analogRead(A0);
+  soil_sensor_value = analogRead(AI);
 //  Serial.println(soil_sensor_value);
   soil_sensor_value = constrain(soil_sensor_value, 485, 1023);
   soilPercentage = map(soil_sensor_value, 485, 1023, 100, 0);
@@ -264,6 +266,9 @@ void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pres
   if(avg_temperature >= 35.0){
     if(soilPercentage < 50){
       Serial.println("Watering the plant");
+      valve_open();
+      delay(20000);
+      valve_close();
       ds3231_read(Clock, Year_last, Month_last, Date_last, Hour_last, Minute_last, Second_last, Century, h12, PM, "get");
       //send to internet function here
     }
@@ -271,6 +276,9 @@ void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pres
   else{
     if(soilPercentage < 30){
       Serial.println("Watering the plant");
+      valve_open();
+      delay(20000);
+      valve_close();
       ds3231_read(Clock, Year_last, Month_last, Date_last, Hour_last, Minute_last, Second_last, Century, h12, PM, "get");
       //send to internet function here
     }
@@ -280,8 +288,9 @@ void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pres
 void setup(){
   Serial.begin(SERIAL_115200);
   Wire.begin();
-//  myservo.attach(servo_pin);  // attaches the servo on pin 9 to the servo object
   sensors.begin(); // Start up the the DS18B20
+  ledcSetup(CHANNEL, Hz, TIMER_WIDTH); // channel 1, 50 Hz, 16-bit width
+  ledcAttachPin(SERVO_PIN, CHANNEL);   // GPIO 25 assigned to channel 1
   pinMode(LED_BUILTIN, OUTPUT);
   
   if(!bme280.begin(0x76)){
@@ -325,9 +334,9 @@ void loop(){
     }
     else if(InChar == '6'){
       Serial.println("Activate Servo");
-//      valve_open(myservo);
-//      delay(10000)
-//      valve_close(myservo);
+      valve_open();
+      delay(10000);
+      valve_close();
     }
   }
   
