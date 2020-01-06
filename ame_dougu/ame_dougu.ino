@@ -8,7 +8,7 @@
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define COUNT_LOW 0 // Minimum degree for the servo motor
-#define COUNT_HIGH 8888 // Maximum degree for the servo motor
+#define COUNT_HIGH 3000 // Maximum degree for the servo motor
 #define TIMER_WIDTH 16 // Servo motor 16-bit width
 #define CHANNEL 1 // Communication channel for the servo motor
 #define Hz 50 // 50 wave cycles per second for the servo motor
@@ -232,8 +232,8 @@ int soilPercentage;
 void soil_sensor_read(int &soil_sensor_value, int &soilPercentage){
   soil_sensor_value = analogRead(AI);
 //  Serial.println(soil_sensor_value);
-  soil_sensor_value = constrain(soil_sensor_value, 485, 1023);
-  soilPercentage = map(soil_sensor_value, 485, 1023, 100, 0);
+  soil_sensor_value = constrain(soil_sensor_value, 1800, 4095);
+  soilPercentage = map(soil_sensor_value, 1800, 4095, 100, 0);
 
   Serial.print("Soil humidity: ");
   Serial.print(soilPercentage);
