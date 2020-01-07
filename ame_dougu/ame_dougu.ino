@@ -7,6 +7,12 @@
 #include <DS3231.h>
 #include "esp32-hal-ledc.h"
 
+#if CONFIG_FREERTOS_UNICORE
+#define ARDUINO_RUNNING_CORE 0
+#else
+#define ARDUINO_RUNNING_CORE 1
+#endif
+
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define COUNT_LOW 0 // Minimum degree for the servo motor
 #define COUNT_HIGH 3000 // Maximum degree for the servo motor
@@ -270,7 +276,7 @@ void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pres
     if(soilPercentage < 50){
       Serial.println("Watering the plant");
       valve_open();
-      // delay(20000);
+       delay(10000);
       valve_close();
       ds3231_read(Clock, Year_last, Month_last, Date_last, Hour_last, Minute_last, Second_last, Century, h12, PM, "get");
       //send to internet function here
@@ -280,7 +286,7 @@ void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pres
     if(soilPercentage < 30){
       Serial.println("Watering the plant");
       valve_open();
-      // delay(20000);
+       delay(10000);
       valve_close();
       ds3231_read(Clock, Year_last, Month_last, Date_last, Hour_last, Minute_last, Second_last, Century, h12, PM, "get");
       //send to internet function here
@@ -288,12 +294,22 @@ void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pres
   }
 }
 
-//WiFi
+//Web Server
 const char* WIFI_NAME= "BACHRAWAN"; 
-const char* WIFI_PASSWORD = "pb17no24"; 
+const char* WIFI_PASSWORD = "pb17no24";
 WiFiServer server(8888);
-String header;
-String valveState = "open";
+class ServerStack{
+  public:
+    WiFiServer server;
+    String header;
+    String valveState;
+  
+  ServerStack(WiFiServer outServer){
+    server = outServer;
+    valveState = "open";
+  }
+};
+ServerStack serverStack(server);
 
 void webServer(WiFiServer &server, String &header, String &valveState){
   WiFiClient client = server.available();
@@ -363,6 +379,19 @@ void webServer(WiFiServer &server, String &header, String &valveState){
   }
 }
 
+//Multithread
+TaskHandle_t serverTask;
+
+void webServerTask(void *serverStack){
+  ServerStack localServerStack = *((ServerStack*)serverStack);
+  
+  while(1){
+    webServer(localServerStack.server, localServerStack.header, localServerStack.valveState);
+    Serial.println("Running on web server task");
+    delay(1000);
+  }
+}
+
 void setup(){
   Serial.begin(SERIAL_115200);
   Wire.begin();
@@ -389,7 +418,9 @@ void setup(){
   Serial.println("Successfully connected to WiFi network");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
-  server.begin();
+  serverStack.server.begin();
+  
+  xTaskCreatePinnedToCore(webServerTask, "serverTask", 4096, (void*)&serverStack, 1, &serverTask, ARDUINO_RUNNING_CORE);
 }
 
 void loop(){
@@ -433,6 +464,5 @@ void loop(){
   }
   
   Serial.println();
-  delay(500);
-  webServer(server, header, valveState);
+  delay(3000);
 }
