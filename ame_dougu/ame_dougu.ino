@@ -1,3 +1,4 @@
+#include <WiFi.h>
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -26,6 +27,7 @@ DS3231 Clock;
 
 //Servo
 void valve_open(){
+  Serial.println("Valve is opening");
   for (int i = COUNT_LOW; i < COUNT_HIGH; i += 100){
     ledcWrite(CHANNEL, i); // sweep open servo 1
     delay(50);
@@ -33,6 +35,7 @@ void valve_open(){
 }
 
 void valve_close(){
+  Serial.println("Valve is closing");
   for (int i = COUNT_HIGH; i > COUNT_LOW; i -= 100){
     ledcWrite(CHANNEL, i); // sweep close servo 1
     delay(50);
@@ -267,7 +270,7 @@ void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pres
     if(soilPercentage < 50){
       Serial.println("Watering the plant");
       valve_open();
-      delay(20000);
+      // delay(20000);
       valve_close();
       ds3231_read(Clock, Year_last, Month_last, Date_last, Hour_last, Minute_last, Second_last, Century, h12, PM, "get");
       //send to internet function here
@@ -277,11 +280,86 @@ void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pres
     if(soilPercentage < 30){
       Serial.println("Watering the plant");
       valve_open();
-      delay(20000);
+      // delay(20000);
       valve_close();
       ds3231_read(Clock, Year_last, Month_last, Date_last, Hour_last, Minute_last, Second_last, Century, h12, PM, "get");
       //send to internet function here
     }
+  }
+}
+
+//WiFi
+const char* WIFI_NAME= "BACHRAWAN"; 
+const char* WIFI_PASSWORD = "pb17no24"; 
+WiFiServer server(8888);
+String header;
+String valveState = "open";
+
+void webServer(WiFiServer &server, String &header, String &valveState){
+  WiFiClient client = server.available();
+
+  if(client){ 
+    Serial.println("New Client is requesting web page"); 
+    String current_data_line = ""; 
+    while(client.connected()){
+      if (client.available()){ 
+        char new_byte = client.read(); 
+        Serial.write(new_byte);
+        header += new_byte;
+        if (new_byte == '\n'){
+          if (current_data_line.length() == 0){
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println("Connection: close");
+            client.println();
+            
+            if (header.indexOf("Valve=OPEN") != -1){
+              Serial.println("Valve is OPEN");
+              valveState = "open";
+              valve_open();
+            }
+            
+            if(header.indexOf("Valve=CLOSED") != -1){
+              Serial.println("Valve is CLOSED");
+              valveState = "closed";
+              valve_close();
+            }
+
+            // Web page heading
+            client.println("<!DOCTYPE html><html>");
+            client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+            client.println("<link rel=\"icon\" href=\"data:\">");
+            client.println("<style>html {font-family:Helvetica; display:inline-block; margin:0px auto; text-align:center;}");
+            client.println(".button {background-color:#4CAF50; border:2px solid #4CAF50; color:white; padding:10px 20px; text-align:center; text-decoration:none; display:inline-block; font-size:16px; margin:4px 2px; cursor:pointer;}");
+            // client.println("text-decoration:none; font-size:30px; margin:2px; cursor:pointer;}");
+            client.println("</style></head>");
+            
+            // Web page body
+            client.println("<body><center><h1>Ame Dougu Web Server</h1></center>");
+            // client.println("<center><h2>Press on button to turn on led and off button to turn off LED</h3></center>");
+            client.println("<form><center>");
+            client.println("<p>Valve is " + valveState + "</p>");
+            client.println("<center><button class=\"button\" name=\"Valve\" value=\"OPEN\" type=\"submit\">Valve OPEN</button>") ;
+            client.println("<button class=\"button\" name=\"Valve\" value=\"CLOSED\" type=\"submit\">Valve CLOSED</button></center>");
+            client.println("</center></form></body></html>");
+            client.println();
+            break;
+          }
+          else{
+              current_data_line = "";
+          }
+        }
+        else if (new_byte != '\r'){
+            current_data_line += new_byte; 
+        }
+      }
+    }
+    // Clear the header variable
+    header = "";
+    // Close the connection
+    client.stop();
+    Serial.println("Client disconnected.");
+    Serial.println("");
   }
 }
 
@@ -298,6 +376,20 @@ void setup(){
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
     while(1);
   }
+
+  Serial.print("Connecting to ");
+  Serial.println(WIFI_NAME);
+  WiFi.begin(WIFI_NAME, WIFI_PASSWORD);
+  
+  while (WiFi.status() != WL_CONNECTED){
+    delay(1000);
+    Serial.println("Trying to connect to Wifi Network");
+  }
+  
+  Serial.println("Successfully connected to WiFi network");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+  server.begin();
 }
 
 void loop(){
@@ -311,7 +403,7 @@ void loop(){
   char InChar;
   if(Serial.read()){
     InChar = Serial.read();
-    Serial.println(InChar);
+//    Serial.println(InChar);
     if(InChar == '1'){
       Serial.println("Set DS3231");
       ds3231_set(Clock, Year, Month, Date, DoW, Hour, Minute, Second);
@@ -340,7 +432,7 @@ void loop(){
     }
   }
   
-//  digitalWrite(LED_BUILTIN, HIGH);
-  delay(10000);
-//  digitalWrite(LED_BUILTIN, LOW);
+  Serial.println();
+  delay(500);
+  webServer(server, header, valveState);
 }
