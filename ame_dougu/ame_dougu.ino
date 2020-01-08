@@ -6,6 +6,10 @@
 #include <Adafruit_BME280.h>
 #include <DS3231.h>
 #include "esp32-hal-ledc.h"
+ #include <AsyncTCP.h>
+ 
+#include <ESPAsyncWebServer.h>
+
 
 #if CONFIG_FREERTOS_UNICORE
 #define ARDUINO_RUNNING_CORE 0
@@ -15,7 +19,7 @@
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define COUNT_LOW 0 // Minimum degree for the servo motor
-#define COUNT_HIGH 3000 // Maximum degree for the servo motor
+#define COUNT_HIGH 4000 // Maximum degree for the servo motor
 #define TIMER_WIDTH 16 // Servo motor 16-bit width
 #define CHANNEL 1 // Communication channel for the servo motor
 #define Hz 50 // 50 wave cycles per second for the servo motor
@@ -32,16 +36,16 @@ DallasTemperature sensors(&oneWire); // Pass oneWire reference to DallasTemperat
 DS3231 Clock;
 
 //Servo
-void valve_open(){
-  Serial.println("Valve is opening");
+void valve_close(){
+  Serial.println("Valve is closing");
   for (int i = COUNT_LOW; i < COUNT_HIGH; i += 100){
     ledcWrite(CHANNEL, i); // sweep open servo 1
     delay(50);
   }
 }
 
-void valve_close(){
-  Serial.println("Valve is closing");
+void valve_open(){
+  Serial.println("Valve is opening");
   for (int i = COUNT_HIGH; i > COUNT_LOW; i -= 100){
     ledcWrite(CHANNEL, i); // sweep close servo 1
     delay(50);
@@ -295,102 +299,296 @@ void plant_watering(float &avg_temperature, Adafruit_BME280 &bme280, float &pres
 }
 
 //Web Server
-const char* WIFI_NAME= "BACHRAWAN"; 
-const char* WIFI_PASSWORD = "pb17no24";
-WiFiServer server(8888);
-class ServerStack{
-  public:
-    WiFiServer server;
-    String header;
-    String valveState;
+const char* WIFI_NAME= "Xperia XZ";
+const char* WIFI_PASSWORD = "7121941abc";
+//WiFiServer server(8888);
+//class ServerStack{
+//  public:
+//    WiFiServer server;
+//    String header;
+//    String valveState;
+//  
+//  ServerStack(WiFiServer outServer){
+//    server = outServer;
+//    valveState = "open";
+//  }
+//};
+//ServerStack serverStack(server);
+//
+//void webServer(WiFiServer &server, String &header, String &valveState){
+//  WiFiClient client = server.available();
+//
+//  if(client){ 
+//    Serial.println("New Client is requesting web page"); 
+//    String current_data_line = ""; 
+//    while(client.connected()){
+//      if (client.available()){ 
+//        char new_byte = client.read(); 
+//        Serial.write(new_byte);
+//        header += new_byte;
+//        if (new_byte == '\n'){
+//          if (current_data_line.length() == 0){
+//            client.println("HTTP/1.1 200 OK");
+//            client.println("Content-type:text/html");
+//            client.println("Connection: close");
+//            client.println();
+//            
+//            if (header.indexOf("Valve=OPEN") != -1){
+//              Serial.println("Valve is OPEN");
+//              valveState = "open";
+//              valve_open();
+//            }
+//            
+//            if(header.indexOf("Valve=CLOSED") != -1){
+//              Serial.println("Valve is CLOSED");
+//              valveState = "closed";
+//              valve_close();
+//            }
+//
+//            // Web page heading
+//            client.println("<!DOCTYPE html><html>");
+//            client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+//            client.println("<link rel=\"icon\" href=\"data:\">");
+//            client.println("<style>html {font-family:Helvetica; display:inline-block; margin:0px auto; text-align:center;}");
+//            client.println(".button {background-color:#4CAF50; border:2px solid #4CAF50; color:white; padding:10px 20px; text-align:center; text-decoration:none; display:inline-block; font-size:16px; margin:4px 2px; cursor:pointer;}");
+//            // client.println("text-decoration:none; font-size:30px; margin:2px; cursor:pointer;}");
+//            client.println("</style></head>");
+//            
+//            // Web page body
+//            client.println("<body><center><h1>Ame Dougu Web Server</h1></center>");
+//            // client.println("<center><h2>Press on button to turn on led and off button to turn off LED</h3></center>");
+//            client.println("<form><center>");
+//            client.println("<p>Valve is " + valveState + "</p>");
+//            client.println("<center><button class=\"button\" name=\"Valve\" value=\"OPEN\" type=\"submit\">Valve OPEN</button>") ;
+//            client.println("<button class=\"button\" name=\"Valve\" value=\"CLOSED\" type=\"submit\">Valve CLOSED</button></center>");
+//            client.println("</center></form></body></html>");
+//            client.println();
+//            break;
+//          }
+//          else{
+//              current_data_line = "";
+//          }
+//        }
+//        else if (new_byte != '\r'){
+//            current_data_line += new_byte; 
+//        }
+//      }
+//    }
+//    // Clear the header variable
+//    header = "";
+//    // Close the connection
+//    client.stop();
+//    Serial.println("Client disconnected.");
+//    Serial.println("");
+//  }
+//}
+//
+////Multithread
+//TaskHandle_t serverTask;
+//
+//void webServerTask(void *serverStack){
+//  ServerStack localServerStack = *((ServerStack*)serverStack);
+//  
+//  while(1){
+//    webServer(localServerStack.server, localServerStack.header, localServerStack.valveState);
+//    Serial.println("Running on web server task");
+//    delay(1000);
+//  }
+//}
+
+AsyncWebServer server(80);
+
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html><html>
+    <head><meta name="viewport" content="width=device-width, initial-scale=1">
+           <script src="https://code.highcharts.com/highcharts.js"></script>
+            <link rel="icon" href="data:">
+            <style>html {font-family:Helvetica; display:inline-block; margin:0px auto; text-align:center;}
+            .button {background-color:#4CAF50; border:2px solid #4CAF50; color:white; padding:10px 20px; text-align:center; text-decoration:none; display:inline-block; font-size:16px; margin:4px 2px; cursor:pointer;}
+            </style>
+  </head>
+            
+           
+    <body>
   
-  ServerStack(WiFiServer outServer){
-    server = outServer;
-    valveState = "open";
-  }
-};
-ServerStack serverStack(server);
-
-void webServer(WiFiServer &server, String &header, String &valveState){
-  WiFiClient client = server.available();
-
-  if(client){ 
-    Serial.println("New Client is requesting web page"); 
-    String current_data_line = ""; 
-    while(client.connected()){
-      if (client.available()){ 
-        char new_byte = client.read(); 
-        Serial.write(new_byte);
-        header += new_byte;
-        if (new_byte == '\n'){
-          if (current_data_line.length() == 0){
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-type:text/html");
-            client.println("Connection: close");
-            client.println();
+  <center><h1>Ame Dougu Web Server</h1></center>
+            <form action="/get"><center>
+            <center><button class="button" name="Valve" value="OPEN" type="submit">Valve OPEN</button>
+            <button class="button" name="Valve" value="CLOSED" type="submit">Valve CLOSED</button></center>
+            </center></form>
+      <br>
+      <br>
+      <br>
+            <div id='chart-temperature' class='container'></div>
+            <div id='chart-humidity' class='container'></div>
+            <div id='chart-pressure' class='container'></div>
+            <div id='chart-soil' class='container'></div>
+          </body>
             
-            if (header.indexOf("Valve=OPEN") != -1){
-              Serial.println("Valve is OPEN");
-              valveState = "open";
-              valve_open();
-            }
-            
-            if(header.indexOf("Valve=CLOSED") != -1){
-              Serial.println("Valve is CLOSED");
-              valveState = "closed";
-              valve_close();
-            }
-
-            // Web page heading
-            client.println("<!DOCTYPE html><html>");
-            client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-            client.println("<link rel=\"icon\" href=\"data:\">");
-            client.println("<style>html {font-family:Helvetica; display:inline-block; margin:0px auto; text-align:center;}");
-            client.println(".button {background-color:#4CAF50; border:2px solid #4CAF50; color:white; padding:10px 20px; text-align:center; text-decoration:none; display:inline-block; font-size:16px; margin:4px 2px; cursor:pointer;}");
-            // client.println("text-decoration:none; font-size:30px; margin:2px; cursor:pointer;}");
-            client.println("</style></head>");
-            
-            // Web page body
-            client.println("<body><center><h1>Ame Dougu Web Server</h1></center>");
-            // client.println("<center><h2>Press on button to turn on led and off button to turn off LED</h3></center>");
-            client.println("<form><center>");
-            client.println("<p>Valve is " + valveState + "</p>");
-            client.println("<center><button class=\"button\" name=\"Valve\" value=\"OPEN\" type=\"submit\">Valve OPEN</button>") ;
-            client.println("<button class=\"button\" name=\"Valve\" value=\"CLOSED\" type=\"submit\">Valve CLOSED</button></center>");
-            client.println("</center></form></body></html>");
-            client.println();
-            break;
-          }
-          else{
-              current_data_line = "";
-          }
-        }
-        else if (new_byte != '\r'){
-            current_data_line += new_byte; 
-        }
+          <script>
+var chartT = new Highcharts.Chart({
+  chart:{ renderTo : 'chart-temperature' },
+  title: { text: 'BME280 Temperature' },
+  series: [{
+    showInLegend: false,
+    data: []
+  }],
+  plotOptions: {
+    line: { animation: false,
+      dataLabels: { enabled: true }
+    },
+    series: { color: '#059e8a' }
+  },
+  xAxis: { type: 'datetime',
+    dateTimeLabelFormats: { second: '%H:%M:%S' }
+  },
+  yAxis: {
+    title: { text: 'Temperature (Celsius)' }
+    //title: { text: 'Temperature (Fahrenheit)' }
+  },
+  credits: { enabled: false }
+});
+setInterval(function ( ) {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var x = (new Date()).getTime(),
+          y = parseFloat(this.responseText);
+      //console.log(this.responseText);
+      if(chartT.series[0].data.length > 40) {
+        chartT.series[0].addPoint([x, y], true, true, true);
+      } else {
+        chartT.series[0].addPoint([x, y], true, false, true);
       }
     }
-    // Clear the header variable
-    header = "";
-    // Close the connection
-    client.stop();
-    Serial.println("Client disconnected.");
-    Serial.println("");
+  };
+  xhttp.open("GET", "/temperature", true);
+  xhttp.send();
+}, 10000 ) ;
+
+var chartH = new Highcharts.Chart({
+  chart:{ renderTo:'chart-humidity' },
+  title: { text: 'BME280 Humidity' },
+  series: [{
+    showInLegend: false,
+    data: []
+  }],
+  plotOptions: {
+    line: { animation: false,
+      dataLabels: { enabled: true }
+    }
+  },
+  xAxis: {
+    type: 'datetime',
+    dateTimeLabelFormats: { second: '%H:%M:%S' }
+  },
+  yAxis: {
+    title: { text: 'Humidity (%)' }
+  },
+  credits: { enabled: false }
+});
+setInterval(function ( ) {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var x = (new Date()).getTime(),
+          y = parseFloat(this.responseText);
+      //console.log(this.responseText);
+      if(chartH.series[0].data.length > 40) {
+        chartH.series[0].addPoint([x, y], true, true, true);
+      } else {
+        chartH.series[0].addPoint([x, y], true, false, true);
+      }
+    }
+  };
+  xhttp.open("GET", "/humidity", true);
+  xhttp.send();
+}, 10000 ) ;
+
+var chartP = new Highcharts.Chart({
+  chart:{ renderTo:'chart-pressure' },
+  title: { text: 'BME280 Pressure' },
+  series: [{
+    showInLegend: false,
+    data: []
+  }],
+  plotOptions: {
+    line: { animation: false,
+      dataLabels: { enabled: true }
+    },
+    series: { color: '#18009c' }
+  },
+  xAxis: {
+    type: 'datetime',
+    dateTimeLabelFormats: { second: '%H:%M:%S' }
+  },
+  yAxis: {
+    title: { text: 'Pressure (hPa)' }
+  },
+  credits: { enabled: false }
+});
+setInterval(function ( ) {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var x = (new Date()).getTime(),
+          y = parseFloat(this.responseText);
+      //console.log(this.responseText);
+      if(chartP.series[0].data.length > 40) {
+        chartP.series[0].addPoint([x, y], true, true, true);
+      } else {
+        chartP.series[0].addPoint([x, y], true, false, true);
+      }
+    }
+  };
+  xhttp.open("GET", "/pressure", true);
+  xhttp.send();
+}, 10000 ) ;
+</script>
+</html>
+)rawliteral";
+
+
+
+String readBME280Temperature() {
+  // Read temperature as Celsius (the default)
+  float t = bme280.readTemperature();
+  // Convert temperature to Fahrenheit
+  //t = 1.8 * t + 32;
+  if (isnan(t)) {    
+    Serial.println("Failed to read from BME280 sensor!");
+    return "";
+  }
+  else {
+    Serial.println(t);
+    return String(t);
   }
 }
 
-//Multithread
-TaskHandle_t serverTask;
-
-void webServerTask(void *serverStack){
-  ServerStack localServerStack = *((ServerStack*)serverStack);
-  
-  while(1){
-    webServer(localServerStack.server, localServerStack.header, localServerStack.valveState);
-    Serial.println("Running on web server task");
-    delay(1000);
+String readBME280Humidity() {
+  float h = bme280.readHumidity();
+  if (isnan(h)) {
+    Serial.println("Failed to read from BME280 sensor!");
+    return "";
+  }
+  else {
+    Serial.println(h);
+    return String(h);
   }
 }
+
+String readBME280Pressure() {
+  float p = bme280.readPressure() / 100.0F;
+  if (isnan(p)) {
+    Serial.println("Failed to read from BME280 sensor!");
+    return "";
+  }
+  else {
+    Serial.println(p);
+    return String(p);
+  }
+}
+
 
 void setup(){
   Serial.begin(SERIAL_115200);
@@ -418,9 +616,61 @@ void setup(){
   Serial.println("Successfully connected to WiFi network");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
-  serverStack.server.begin();
+//  serverStack.server.begin();
+  server.begin();
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html);
+  });
+
+  server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    // String inputMessage;
+    // String inputParam;
+    // if (request->hasParam(webYear) && request->hasParam(webMonth) && request->hasParam(webDay)){
+    //   scheduledYear = request->getParam(webYear)->value();
+    //   scheduledMonth = request->getParam(webMonth)->value();
+    //   scheduledDay = request->getParam(webDay)->value();
+    // }
+    // // GET input1 value on <ESP_IP>/get?input1=<inputMessage>
+    // else if (request->hasParam(webYear)) {
+    //   inputMessage = request->getParam(webYear)->value();
+    //   inputParam = webYear;
+    // }
+    // // GET input2 value on <ESP_IP>/get?input2=<inputMessage>
+    // else if (request->hasParam(webMonth)) {
+    //   inputMessage = request->getParam(webMonth)->value();
+    //   inputParam = webMonth;
+    // }
+    // // GET input3 value on <ESP_IP>/get?input3=<inputMessage>
+    // else if (request->hasParam(webDay)) {
+    //   inputMessage = request->getParam(webDay)->value();
+    //   inputParam = webDay;
+    // }
+    if (request->hasParam("Valve")) {
+      if (request->getParam("Valve")->value() == "OPEN"){
+        valve_open();
+        delay(1000);
+      }
+      else if (request->getParam("Valve")->value() == "CLOSED")
+      {
+        valve_close();
+        delay(1000);
+      }
+    }
+    request->send(200, "text/html", "<br><a href=\"/\">Return to Home Page</a>");
+  });
+
+  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/plain", readBME280Temperature().c_str());
+  });
+  server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/plain", readBME280Humidity().c_str());
+  });
+  server.on("/pressure", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/plain", readBME280Pressure().c_str());
+  });
   
-  xTaskCreatePinnedToCore(webServerTask, "serverTask", 4096, (void*)&serverStack, 1, &serverTask, ARDUINO_RUNNING_CORE);
+//  xTaskCreatePinnedToCore(webServerTask, "serverTask", 4096, (void*)&serverStack, 1, &serverTask, ARDUINO_RUNNING_CORE);
 }
 
 void loop(){
@@ -464,5 +714,5 @@ void loop(){
   }
   
   Serial.println();
-  delay(3000);
+  delay(5000);
 }
